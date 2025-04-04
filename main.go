@@ -4,6 +4,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/kiasaty/spendings-tracker/internal/app"
 	"github.com/kiasaty/spendings-tracker/internal/database"
+	"github.com/kiasaty/spendings-tracker/pkg/telegram"
 )
 
 func main() {
@@ -12,12 +13,19 @@ func main() {
 	}
 
 	databaseClient, err := database.NewDatabaseClient()
-
 	if err != nil {
 		panic("Setting up database client failed!")
 	}
 
-	app := app.NewApp(databaseClient)
+	bot, err := telegram.NewTelegramBot()
+	if err != nil {
+		panic("failed to create telegram bot: " + err.Error())
+	}
+
+	app, err := app.NewApp(databaseClient, bot)
+	if err != nil {
+		panic("Setting up app failed: " + err.Error())
+	}
 
 	app.HandleCommand()
 }

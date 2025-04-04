@@ -15,7 +15,7 @@ type DatabaseClient interface {
 	FindTagByName(name string) (*models.Tag, error)
 
 	CreateSpending(*models.Spending) (*models.Spending, error)
-	FindSpendingByMessageId(messageID int) (spending *models.Spending)
+	FindSpendingByMessageId(messageID int) (*models.Spending, error)
 	UpdateSpending(spending *models.Spending) error
 	SyncSpendingTags(*models.Spending, *[]models.Tag) error
 }

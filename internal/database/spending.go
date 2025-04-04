@@ -1,6 +1,11 @@
 package database
 
-import "github.com/kiasaty/spendings-tracker/models"
+import (
+	"errors"
+
+	"github.com/kiasaty/spendings-tracker/models"
+	"gorm.io/gorm"
+)
 
 func (c *Client) CreateSpending(spending *models.Spending) (*models.Spending, error) {
 	result := c.DB.Create(&spending)
@@ -12,10 +17,18 @@ func (c *Client) CreateSpending(spending *models.Spending) (*models.Spending, er
 	return spending, nil
 }
 
-func (c *Client) FindSpendingByMessageId(messageID int) (spending *models.Spending) {
-	c.DB.Where("message_id = ?", messageID).First(&spending)
+func (c *Client) FindSpendingByMessageId(messageID int) (*models.Spending, error) {
+	var spending models.Spending
+	result := c.DB.Where("message_id = ?", messageID).First(&spending)
 
-	return spending
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, result.Error
+	}
+
+	return &spending, nil
 }
 
 func (c *Client) UpdateSpending(spending *models.Spending) error {
@@ -25,5 +38,5 @@ func (c *Client) UpdateSpending(spending *models.Spending) error {
 }
 
 func (c *Client) SyncSpendingTags(spending *models.Spending, tags *[]models.Tag) error {
-	return c.DB.Model(*spending).Association("Tags").Replace(tags)
+	return c.DB.Model(spending).Association("Tags").Replace(tags)
 }

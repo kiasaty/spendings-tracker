@@ -1,57 +1,99 @@
 package app
 
 import (
+	"fmt"
+	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/kiasaty/spendings-tracker/models"
 	"github.com/kiasaty/spendings-tracker/pkg/extractors"
-	"github.com/kiasaty/spendings-tracker/pkg/telegram"
 )
 
 func (app *App) FetchUpdates() {
-	updates := telegram.GetUpdates()
+	updates, err := app.Bot.GetUpdates()
+	if err != nil {
+		fmt.Printf("Error fetching updates: %v\n", err)
+		return
+	}
 
 	for _, update := range updates {
 		app.handleUpdate(&update)
 	}
 }
 
-func (app *App) handleUpdate(update *telegram.Update) {
-	prices := extractors.ExtractPrices(update.Message.Text)
-
-	if len(prices) != 1 {
+func (app *App) handleUpdate(update *tgbotapi.Update) {
+	if update.Message == nil {
 		return
 	}
 
-	var tags []models.Tag
+	// Extract price, skip if not found
+	price, err := extractors.ExtractPrice(update.Message.Text)
+	if err != nil {
+		return
+	}
 
-	tagsNames := extractors.ExtractHashtags(update.Message.Text)
+	// Extract date or use current time
+	date, err := extractors.ExtractDate(update.Message.Text)
+	if err != nil {
+		date = time.Now()
+	}
 
-	for _, tagName := range tagsNames {
-		tag := app.FindTagByName(tagName)
-
+	// Extract tags
+	tags := extractors.ExtractHashtags(update.Message.Text)
+	var tagModels []models.Tag
+	for _, tagName := range tags {
+		tag, err := app.FindTagByName(tagName)
+		if err != nil {
+			fmt.Printf("Error finding tag: %v\n", err)
+			continue
+		}
 		if tag == nil {
-			tag = app.StoreTag(&models.Tag{
+			tag, err = app.StoreTag(&models.Tag{
 				Name: tagName,
 			})
+			if err != nil {
+				fmt.Printf("Error storing tag: %v\n", err)
+				continue
+			}
 		}
-
-		tags = append(tags, *tag)
+		tagModels = append(tagModels, *tag)
 	}
 
-	spending := app.FindSpendingByMessageId(update.Message.MessageID)
+	// Check if spending already exists
+	spending, err := app.FindSpendingByMessageId(update.Message.MessageID)
+	if err != nil {
+		fmt.Printf("Error finding spending: %v\n", err)
+		return
+	}
 
 	if spending == nil {
-		spending = app.StoreSpending(&models.Spending{
+		// Create new spending
+		spending, err = app.StoreSpending(&models.Spending{
 			ChatId:      update.Message.Chat.ID,
 			MessageId:   update.Message.MessageID,
-			Cost:        prices[0],
+			Cost:        price,
 			Description: update.Message.Text,
+			SpentAt:     date,
 		})
+		if err != nil {
+			fmt.Printf("Error storing spending: %v\n", err)
+			return
+		}
 	} else {
-		spending = app.UpdateSpending(&models.Spending{
-			Cost:        prices[0],
-			Description: update.Message.Text,
-		})
+		// Update existing spending
+		spending.Cost = price
+		spending.Description = update.Message.Text
+		spending.SpentAt = date
+		spending, err = app.UpdateSpending(spending)
+		if err != nil {
+			fmt.Printf("Error updating spending: %v\n", err)
+			return
+		}
 	}
 
-	app.SyncSpendingTags(spending, &tags)
+	// Sync tags
+	err = app.SyncSpendingTags(spending, &tagModels)
+	if err != nil {
+		fmt.Printf("Error syncing tags: %v\n", err)
+	}
 }

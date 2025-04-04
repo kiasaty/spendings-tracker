@@ -1,68 +1,52 @@
 package telegram
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/url"
+	"fmt"
 	"os"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func GetUpdates() []Update {
-	response, err := request("/getUpdates")
-
-	defer response.Body.Close()
-
-	var updatesResponse struct {
-		OK     bool     `json:"ok"`
-		Result []Update `json:"result"`
-	}
-
-	decoder := json.NewDecoder(response.Body)
-	err = decoder.Decode(&updatesResponse)
-
-	if err != nil {
-		panic("Parsing the response body failed!")
-	}
-
-	if !updatesResponse.OK {
-		panic("Fetching updates from telegram failed!")
-	}
-
-	return updatesResponse.Result
+type TelegramBot struct {
+	Bot *tgbotapi.BotAPI
 }
 
-// func SendMessage(chatID int, message string) map[string]interface{} {
-// 	params := make(map[string]string)
-// 	params["chat_id"] = strconv.Itoa(chatID)
-// 	params["text"] = message
-
-// 	return request("/sendMessage", params)
-// }
-
-func request(path string, params ...map[string]string) (*http.Response, error) {
-	requestUrl := url.URL{
-		Scheme: "https",
-		Host:   "api.telegram.org",
-		Path:   "bot" + os.Getenv("TELEGRAM_BOT_TOKEN") + path,
-	}
-
-	if len(params) > 0 {
-		requestParams := url.Values{}
-
-		for key, value := range params[0] {
-			requestParams.Add(key, value)
-		}
-
-		requestUrl.RawQuery = requestParams.Encode()
-	}
-
-	response, err := http.Get(requestUrl.String())
-
+func NewTelegramBot() (*TelegramBot, error) {
+	bot, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_BOT_TOKEN"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
 
-	defer response.Body.Close()
+	bot.Debug = true
 
-	return response, nil
+	return &TelegramBot{
+		Bot: bot,
+	}, nil
+}
+
+func (t *TelegramBot) GetUpdates() ([]tgbotapi.Update, error) {
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+
+	updates := t.Bot.GetUpdatesChan(u)
+	var result []tgbotapi.Update
+
+	// Get all available updates
+	for update := range updates {
+		result = append(result, update)
+		if len(result) >= 100 { // Limit the number of updates to process at once
+			break
+		}
+	}
+
+	return result, nil
+}
+
+func (t *TelegramBot) SendMessage(chatID int64, text string) error {
+	msg := tgbotapi.NewMessage(chatID, text)
+	_, err := t.Bot.Send(msg)
+	if err != nil {
+		return fmt.Errorf("failed to send message: %w", err)
+	}
+	return nil
 }

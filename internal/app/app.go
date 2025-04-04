@@ -10,10 +10,10 @@ import (
 
 type App struct {
 	DB  database.DatabaseClient
-	Bot *telegram.TelegramBot
+	Bot telegram.BotInterface
 }
 
-func NewApp(databaseClient database.DatabaseClient, bot *telegram.TelegramBot) (*App, error) {
+func NewApp(databaseClient database.DatabaseClient, bot telegram.BotInterface) (*App, error) {
 	return &App{
 		DB:  databaseClient,
 		Bot: bot,

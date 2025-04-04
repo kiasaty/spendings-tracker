@@ -2,6 +2,7 @@ package app
 
 import (
 	"testing"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/kiasaty/spendings-tracker/internal/testutils"
@@ -9,78 +10,85 @@ import (
 
 func TestHandleUpdate(t *testing.T) {
 	tests := []struct {
-		name          string
-		update        *tgbotapi.Update
-		expectedCost  float64
-		expectedTags  []string
-		expectedError bool
+		name         string
+		update       *tgbotapi.Update
+		expectedCost float64
+		expectedTags []string
+		expectedDate time.Time
+		expectError  bool
 	}{
 		{
-			name:          "valid expense with tags",
-			update:        testutils.NewTestUpdate(1, 123456789, "Lunch 15.50 #food #work"),
-			expectedCost:  15.50,
-			expectedTags:  []string{"food", "work"},
-			expectedError: false,
+			name:         "Valid expense with tags",
+			update:       testutils.NewTestUpdate(1, 123456789, "Lunch 15.50 #food #work"),
+			expectedCost: 15.50,
+			expectedTags: []string{"food", "work"},
+			expectedDate: time.Now(),
 		},
 		{
-			name:          "valid expense without tags",
-			update:        testutils.NewTestUpdate(2, 123456789, "Coffee 3.50"),
-			expectedCost:  3.50,
-			expectedTags:  []string{},
-			expectedError: false,
+			name:         "Valid expense without tags",
+			update:       testutils.NewTestUpdate(2, 123456789, "Dinner 25.75"),
+			expectedCost: 25.75,
+			expectedTags: []string{},
+			expectedDate: time.Now(),
 		},
 		{
-			name:          "expense without price",
-			update:        testutils.NewTestUpdate(3, 123456789, "Just a message without price"),
-			expectedError: true,
+			name:         "Valid expense with date",
+			update:       testutils.NewTestUpdate(3, 123456789, "Lunch 15.50 2024-05-09 #food"),
+			expectedCost: 15.50,
+			expectedTags: []string{"food"},
+			expectedDate: time.Date(2024, 5, 9, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			name:          "expense with invalid price",
-			update:        testutils.NewTestUpdate(4, 123456789, "Invalid price abc #food"),
-			expectedError: true,
+			name:         "Valid expense with different date format",
+			update:       testutils.NewTestUpdate(4, 123456789, "Dinner 25.75 09.05.2024 #food"),
+			expectedCost: 25.75,
+			expectedTags: []string{"food"},
+			expectedDate: time.Date(2024, 5, 9, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:        "Expense without price",
+			update:      testutils.NewTestUpdate(5, 123456789, "Lunch #food"),
+			expectError: true,
+		},
+		{
+			name:        "Expense with invalid price",
+			update:      testutils.NewTestUpdate(6, 123456789, "Lunch abc #food"),
+			expectError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create mocks with initial state
-			db := testutils.NewMockDatabaseClient()
-			bot := testutils.NewMockTelegramBot()
-
-			// Create app with mocks
-			app := &App{
-				DB:  db,
-				Bot: bot,
+			mockDB := testutils.NewMockDatabaseClient()
+			mockBot := testutils.NewMockTelegramBot()
+			app, err := NewApp(mockDB, mockBot)
+			if err != nil {
+				t.Fatalf("Failed to create app: %v", err)
 			}
 
-			// Process the update
 			app.handleUpdate(tt.update)
 
-			if tt.expectedError {
-				// For error cases, verify no spending was created
-				if spending, _ := db.FindSpendingByMessageId(tt.update.Message.MessageID); spending != nil {
-					t.Errorf("Expected no spending to be created for error case")
+			if tt.expectError {
+				// Verify no spending was created
+				spending, _ := mockDB.FindSpendingByMessageId(tt.update.Message.MessageID)
+				if spending != nil {
+					t.Errorf("Expected no spending to be created for invalid message")
 				}
 				return
 			}
 
-			// Verify spending was created with correct values
-			db.VerifySpending(t, tt.update.Message.MessageID, tt.expectedCost)
+			// Get the spending once
+			spending, _ := mockDB.FindSpendingByMessageId(tt.update.Message.MessageID)
 
-			// Verify tags were created
-			for _, tagName := range tt.expectedTags {
-				tag, err := db.FindTagByName(tagName)
-				if err != nil {
-					t.Errorf("Unexpected error finding tag: %v", err)
-				}
-				if tag == nil {
-					t.Errorf("Expected tag %s to be created", tagName)
-				}
-			}
+			// Verify spending cost and date
+			mockDB.VerifySpending(t, spending, tt.expectedCost, tt.expectedDate)
+
+			// Verify tags
+			mockDB.VerifySpendingTags(t, spending, tt.expectedTags)
 
 			// Reset mocks for next test
-			db.Reset()
-			bot.Reset()
+			mockDB.Reset()
+			mockBot.Reset()
 		})
 	}
 }

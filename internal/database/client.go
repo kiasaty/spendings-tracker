@@ -1,7 +1,9 @@
 package database
 
 import (
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/kiasaty/spendings-tracker/models"
 	"gorm.io/driver/sqlite"
@@ -18,6 +20,7 @@ type DatabaseClient interface {
 	FindSpendingByMessageId(messageID int) (*models.Spending, error)
 	UpdateSpending(spending *models.Spending) error
 	SyncSpendingTags(*models.Spending, *[]models.Tag) error
+	GetSpendingsByDateRange(startDate, endDate time.Time) ([]models.Spending, error)
 }
 
 type Client struct {
@@ -44,4 +47,13 @@ func NewDatabaseClient() (DatabaseClient, error) {
 func (c *Client) Migrate() {
 	c.DB.AutoMigrate(&models.Tag{})
 	c.DB.AutoMigrate(&models.Spending{})
+}
+
+func (c *Client) GetSpendingsByDateRange(startDate, endDate time.Time) ([]models.Spending, error) {
+	var spendings []models.Spending
+	err := c.DB.Preload("Tags").Where("spent_at BETWEEN ? AND ?", startDate, endDate).Find(&spendings).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get spendings by date range: %w", err)
+	}
+	return spendings, nil
 }

@@ -139,3 +139,13 @@ func (m *MockDatabaseClient) VerifySpendingTags(t *testing.T, spending *models.S
 		}
 	}
 }
+
+func (m *MockDatabaseClient) GetSpendingsByDateRange(startDate, endDate time.Time) ([]models.Spending, error) {
+	var result []models.Spending
+	for _, spending := range m.spendings {
+		if !spending.SpentAt.Before(startDate) && !spending.SpentAt.After(endDate) {
+			result = append(result, *spending)
+		}
+	}
+	return result, nil
+}

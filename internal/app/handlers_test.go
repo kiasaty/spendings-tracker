@@ -6,6 +6,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/kiasaty/spendings-tracker/internal/testutils"
+	"github.com/kiasaty/spendings-tracker/models"
 )
 
 func TestHandleUpdate(t *testing.T) {
@@ -112,5 +113,105 @@ func TestHandleUpdateWithError(t *testing.T) {
 	// Verify no spending was created due to error
 	if spending, _ := db.FindSpendingByMessageId(1); spending != nil {
 		t.Errorf("Expected no spending to be created when database returns error")
+	}
+}
+
+func TestHandleReportCommand(t *testing.T) {
+	now := time.Now()
+	currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	lastMonthStart := time.Date(now.Year(), now.Month()-1, 1, 0, 0, 0, 0, now.Location())
+
+	tests := []struct {
+		name           string
+		command        string
+		spendings      []*models.Spending
+		expectedReport string
+	}{
+		{
+			name:    "Current month report with multiple tags",
+			command: "/report",
+			spendings: []*models.Spending{
+				{
+					MessageId: 1,
+					Cost:      15.50,
+					SpentAt:   currentMonthStart.AddDate(0, 0, 1),
+					Tags:      []models.Tag{{Name: "food"}},
+				},
+				{
+					MessageId: 2,
+					Cost:      25.75,
+					SpentAt:   currentMonthStart.AddDate(0, 0, 2),
+					Tags:      []models.Tag{{Name: "food"}, {Name: "work"}},
+				},
+				{
+					MessageId: 3,
+					Cost:      10.00,
+					SpentAt:   currentMonthStart.AddDate(0, 0, 3),
+					Tags:      []models.Tag{{Name: "work"}},
+				},
+			},
+			expectedReport: "Spending report for current month:\n\nfood: 41.25\nwork: 35.75\n\nTotal: 51.25",
+		},
+		{
+			name:    "Last month report",
+			command: "/report_last_month",
+			spendings: []*models.Spending{
+				{
+					MessageId: 4,
+					Cost:      30.00,
+					SpentAt:   lastMonthStart.AddDate(0, 0, 1),
+					Tags:      []models.Tag{{Name: "food"}},
+				},
+				{
+					MessageId: 5,
+					Cost:      20.00,
+					SpentAt:   lastMonthStart.AddDate(0, 0, 2),
+					Tags:      []models.Tag{},
+				},
+			},
+			expectedReport: "Spending report for last month:\n\nfood: 30.00\nno_tag: 20.00\n\nTotal: 50.00",
+		},
+		{
+			name:           "Empty current month report",
+			command:        "/report",
+			spendings:      []*models.Spending{},
+			expectedReport: "Spending report for current month:\n\nTotal: 0.00",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB := testutils.NewMockDatabaseClient()
+			mockBot := testutils.NewMockTelegramBot()
+			app, err := NewApp(mockDB, mockBot)
+			if err != nil {
+				t.Fatalf("Failed to create app: %v", err)
+			}
+
+			// Add test spendings to mock DB
+			for _, spending := range tt.spendings {
+				mockDB.CreateSpending(spending)
+			}
+
+			// Create update with command
+			update := &tgbotapi.Update{
+				Message: &tgbotapi.Message{
+					Text: tt.command,
+					Chat: &tgbotapi.Chat{
+						ID: 123456789,
+					},
+				},
+			}
+
+			// Handle the command
+			app.handleUpdate(update)
+
+			// Verify the report message
+			mockBot.VerifyMessageSent(t, tt.expectedReport)
+
+			// Reset mocks for next test
+			mockDB.Reset()
+			mockBot.Reset()
+		})
 	}
 }

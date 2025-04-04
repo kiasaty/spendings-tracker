@@ -19,8 +19,9 @@ func NewMockTelegramBot() *MockTelegramBot {
 	}
 }
 
-func (m *MockTelegramBot) GetUpdates() ([]tgbotapi.Update, error) {
-	return []tgbotapi.Update{}, nil
+func (m *MockTelegramBot) GetUpdates() tgbotapi.UpdatesChannel {
+	// For tests, we don't need a real updates channel
+	return make(chan tgbotapi.Update)
 }
 
 func (m *MockTelegramBot) SendMessage(chatID int64, text string) error {
@@ -28,13 +29,13 @@ func (m *MockTelegramBot) SendMessage(chatID int64, text string) error {
 	return nil
 }
 
-func (m *MockTelegramBot) VerifyMessageSent(t *testing.T, expectedText string) {
+func (m *MockTelegramBot) VerifyMessage(t *testing.T, expectedText string) {
 	for _, msg := range m.sentMessages {
 		if msg == expectedText {
 			return
 		}
 	}
-	t.Errorf("Expected message '%s' to be sent", expectedText)
+	t.Errorf("Expected message '%s' to be sent, but got messages: %v", expectedText, m.sentMessages)
 }
 
 func (m *MockTelegramBot) Reset() {
@@ -49,6 +50,15 @@ func (m *MockTelegramBot) ExpectMessage(text string) {
 func (m *MockTelegramBot) VerifyExpectations(t *testing.T) {
 	if len(m.expectedMessages) != len(m.sentMessages) {
 		t.Errorf("Expected %d messages, got %d", len(m.expectedMessages), len(m.sentMessages))
+		return
 	}
-	// ... verify each message ...
+	for i, expected := range m.expectedMessages {
+		if i >= len(m.sentMessages) {
+			t.Errorf("Missing expected message: %s", expected)
+			continue
+		}
+		if m.sentMessages[i] != expected {
+			t.Errorf("Message mismatch at position %d:\nExpected: %s\nGot: %s", i, expected, m.sentMessages[i])
+		}
+	}
 }

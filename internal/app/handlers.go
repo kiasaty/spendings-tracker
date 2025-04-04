@@ -12,13 +12,11 @@ import (
 )
 
 func (app *App) FetchUpdates() {
-	updates, err := app.Bot.GetUpdates()
-	if err != nil {
-		fmt.Printf("Error fetching updates: %v\n", err)
-		return
-	}
+	fmt.Println("Starting to fetch updates...")
+	updates := app.Bot.GetUpdates()
 
-	for _, update := range updates {
+	for update := range updates {
+		fmt.Printf("Received update ID: %d, Message: %s\n", update.UpdateID, update.Message.Text)
 		app.handleUpdate(&update)
 	}
 }
@@ -58,7 +56,6 @@ func (app *App) handleUpdate(update *tgbotapi.Update) {
 	for _, tagName := range tags {
 		tag, err := app.FindTagByName(tagName)
 		if err != nil {
-			fmt.Printf("Error finding tag: %v\n", err)
 			continue
 		}
 		if tag == nil {
@@ -66,7 +63,6 @@ func (app *App) handleUpdate(update *tgbotapi.Update) {
 				Name: tagName,
 			})
 			if err != nil {
-				fmt.Printf("Error storing tag: %v\n", err)
 				continue
 			}
 		}
@@ -76,7 +72,6 @@ func (app *App) handleUpdate(update *tgbotapi.Update) {
 	// Check if spending already exists
 	spending, err := app.FindSpendingByMessageId(update.Message.MessageID)
 	if err != nil {
-		fmt.Printf("Error finding spending: %v\n", err)
 		return
 	}
 
@@ -90,7 +85,6 @@ func (app *App) handleUpdate(update *tgbotapi.Update) {
 			SpentAt:     date,
 		})
 		if err != nil {
-			fmt.Printf("Error storing spending: %v\n", err)
 			return
 		}
 	} else {
@@ -100,7 +94,6 @@ func (app *App) handleUpdate(update *tgbotapi.Update) {
 		spending.SpentAt = date
 		spending, err = app.UpdateSpending(spending)
 		if err != nil {
-			fmt.Printf("Error updating spending: %v\n", err)
 			return
 		}
 	}
@@ -140,7 +133,7 @@ func (app *App) handleReportCommand(message *tgbotapi.Message, isLastMonth bool)
 	for _, spending := range spendings {
 		total += spending.Cost
 		if len(spending.Tags) == 0 {
-			tagTotals["no_tag"] += spending.Cost
+			tagTotals["other"] += spending.Cost
 			continue
 		}
 		for _, tag := range spending.Tags {
@@ -159,7 +152,9 @@ func (app *App) handleReportCommand(message *tgbotapi.Message, isLastMonth bool)
 	// Sort tags for consistent output
 	var tags []string
 	for tag := range tagTotals {
-		tags = append(tags, tag)
+		if tag != "other" {
+			tags = append(tags, tag)
+		}
 	}
 	sort.Strings(tags)
 
@@ -168,8 +163,16 @@ func (app *App) handleReportCommand(message *tgbotapi.Message, isLastMonth bool)
 		report.WriteString(fmt.Sprintf("%s: %.2f\n", tag, tagTotals[tag]))
 	}
 
+	// Add "other" category if there are untagged spendings
+	if tagTotals["other"] > 0 {
+		report.WriteString(fmt.Sprintf("other: %.2f\n", tagTotals["other"]))
+	}
+
 	// Add total
-	report.WriteString(fmt.Sprintf("\nTotal: %.2f", total))
+	if len(tags) > 0 || tagTotals["other"] > 0 {
+		report.WriteString("\n")
+	}
+	report.WriteString(fmt.Sprintf("Total: %.2f", total))
 
 	// Send the report
 	app.Bot.SendMessage(message.Chat.ID, report.String())

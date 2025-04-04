@@ -9,7 +9,7 @@ import (
 
 // BotInterface defines the interface for interacting with Telegram
 type BotInterface interface {
-	GetUpdates() ([]tgbotapi.Update, error)
+	GetUpdates() tgbotapi.UpdatesChannel
 	SendMessage(chatID int64, text string) error
 }
 
@@ -33,22 +33,11 @@ func NewTelegramBot() (BotInterface, error) {
 }
 
 // GetUpdates retrieves updates from Telegram
-func (t *telegramBot) GetUpdates() ([]tgbotapi.Update, error) {
+func (t *telegramBot) GetUpdates() tgbotapi.UpdatesChannel {
+	fmt.Println("Setting up update channel...")
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
-
-	updates := t.bot.GetUpdatesChan(u)
-	var result []tgbotapi.Update
-
-	// Get all available updates
-	for update := range updates {
-		result = append(result, update)
-		if len(result) >= 100 { // Limit the number of updates to process at once
-			break
-		}
-	}
-
-	return result, nil
+	return t.bot.GetUpdatesChan(u)
 }
 
 // SendMessage sends a message to a Telegram chat

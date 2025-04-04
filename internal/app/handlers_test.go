@@ -169,13 +169,26 @@ func TestHandleReportCommand(t *testing.T) {
 					Tags:      []models.Tag{},
 				},
 			},
-			expectedReport: "Spending report for last month:\n\nfood: 30.00\nno_tag: 20.00\n\nTotal: 50.00",
+			expectedReport: "Spending report for last month:\n\nfood: 30.00\nother: 20.00\n\nTotal: 50.00",
 		},
 		{
 			name:           "Empty current month report",
 			command:        "/report",
 			spendings:      []*models.Spending{},
 			expectedReport: "Spending report for current month:\n\nTotal: 0.00",
+		},
+		{
+			name:    "Current month report with only untagged spendings",
+			command: "/report",
+			spendings: []*models.Spending{
+				{
+					MessageId: 6,
+					Cost:      33.00,
+					SpentAt:   currentMonthStart.AddDate(0, 0, 1),
+					Tags:      []models.Tag{},
+				},
+			},
+			expectedReport: "Spending report for current month:\n\nother: 33.00\n\nTotal: 33.00",
 		},
 	}
 
@@ -204,10 +217,14 @@ func TestHandleReportCommand(t *testing.T) {
 			}
 
 			// Handle the command
-			app.handleUpdate(update)
+			if tt.command == "/report" {
+				app.handleReportCommand(update.Message, false)
+			} else {
+				app.handleReportCommand(update.Message, true)
+			}
 
 			// Verify the report message
-			mockBot.VerifyMessageSent(t, tt.expectedReport)
+			mockBot.VerifyMessage(t, tt.expectedReport)
 
 			// Reset mocks for next test
 			mockDB.Reset()
